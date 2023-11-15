@@ -99,7 +99,7 @@ class Serial:
         self.parent = parent
         self.connection = serial.Serial(
             port="/dev/ttyS0",
-            #port="COM3",
+            # port="COM3",
             baudrate=115200,
             parity=serial.PARITY_NONE,
             stopbits=serial.STOPBITS_ONE,
@@ -145,11 +145,7 @@ class Widget(QWidget):
         self.data_connector = None
         self.live_plot_widget = None
         self.graph_setup()
-        self.message = {'Kp': 0, 'Ki': 0, 'Kd': 0, 'setpoint': 0}
-        self.ui.P_value_txt.returnPressed.connect(lambda: self.P_value_changed(float(self.ui.P_value_txt.text())))
-        self.ui.I_value_txt.returnPressed.connect(lambda: self.I_value_changed(float(self.ui.I_value_txt.text())))
-        self.ui.D_value_txt.returnPressed.connect(lambda: self.D_value_changed(float(self.ui.D_value_txt.text())))
-        self.ui.SetPoint_value_txt.returnPressed.connect(lambda: self.SetPoint_value_changed(float(self.ui.SetPoint_value_txt.text())))
+        self.message = {'Kp': 0.0, 'Ki': 0.0, 'Kd': 0.0, 'setpoint': 0.0}
         self.ui.Start_btn.clicked.connect(self.send_start)
         self.ui.Pause_btn.clicked.connect(self.send_pause)
         self.ui.Stop_btn.clicked.connect(self.send_stop)
@@ -188,18 +184,6 @@ class Widget(QWidget):
         self.data_connector = DataConnector(self.plot, max_points=1500, update_rate=100000)
         self.ui.gridLayout.addWidget(self.live_plot_widget, 2, 0, 1, 4)
 
-    def P_value_changed(self, new_value):
-        self.message.update({'Kp': new_value})
-
-    def I_value_changed(self, new_value):
-        self.message.update({'Ki': new_value})
-
-    def D_value_changed(self, new_value):
-        self.message.update({'Kd': new_value})
-
-    def SetPoint_value_changed(self, new_value):
-        self.message.update({'setpoint': new_value})
-
     def send_start(self):
         self.serial.send("start")
 
@@ -213,6 +197,10 @@ class Widget(QWidget):
         self.data_connector.clear()
 
     def send_values(self):
+        self.message.update({'Kp': float(self.ui.P_value_txt.text())})
+        self.message.update({'Ki': float(self.ui.I_value_txt.text())})
+        self.message.update({'Kd': float(self.ui.D_value_txt.text())})
+        self.message.update({'setpoint': float(self.ui.SetPoint_value_txt.text())})
         self.serial.send(self.message)
 
 
