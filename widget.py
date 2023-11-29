@@ -1,6 +1,8 @@
 # This Python file uses the following encoding: utf-8
 import sys
 import traceback
+import time
+
 import serial
 import json
 from PySide6.QtWidgets import QApplication, QWidget
@@ -20,6 +22,7 @@ import pyqtgraph as pg  # type: ignore
 from ui_form import Ui_Widget
 
 _alive = True
+setpoint = 0
 
 
 class WorkerSignals(QObject):
@@ -93,12 +96,64 @@ class Worker(QRunnable):
             self.signals.finished.emit()  # Done
 
 
+class pid_control:
+    def __init__(self, _kp=0.1, _ki=0, _kd=0.0001):
+        self.Kp = _kp
+        self.Ki = _ki
+        self.Kd = _kd
+
+        self.current_value = 0
+
+        self.cycle = 1
+
+        self.error = 0
+        self.dt_error = 0
+
+    def calc_p(self):
+        return round(float(self.Kp * self.error), 4)
+
+    def calc_i(self):
+        return round(float(self.Ki * self.dt_error), 4)
+
+    def calc_d(self, _error):
+        return round(float(self.Kd * _error), 4)
+
+    def pid_calc(self, _target):
+        _c = 0
+        self.error = _target - self.current_value
+        _c += self.calc_p()
+
+        self.dt_error += self.error
+        _c += self.calc_i()
+
+        temp = self.dt_error / self.cycle
+        _c += self.calc_d(temp)
+
+        self.current_value += _c
+        self.cycle += 1
+
+    def get_current_value(self):
+        return self.current_value
+
+    def __str__(self):
+        return "Current value = {0}, Error = {1}, Cycle = {2}".format(
+            int(self.current_value), int(self.error), self.cycle
+            )
+
+    def err(self):
+        return self.error
+
+    def pv(self):
+        return int(self.current_value)
+
+
 class Serial:
     def __init__(self, parent):
         super().__init__()
         self.parent = parent
+        '''
         self.connection = serial.Serial(
-            port="/dev/ttyS0",
+            port='/dev/ttyS0',
             # port="COM3",
             baudrate=115200,
             parity=serial.PARITY_NONE,
@@ -106,8 +161,10 @@ class Serial:
             bytesize=serial.EIGHTBITS,
             timeout=1,
         )
+        '''
+        self.pid_controller = pid_control()
         self.threadpool = QThreadPool()
-        worker = Worker(self.recv)
+        worker = Worker(self.calc)
         self.threadpool.start(worker)
 
     def close(self):
@@ -134,17 +191,29 @@ class Serial:
         print(msg)
         self.connection.write(msg.encode())
 
+    def calc(self):
+        global setpoint
+        global _alive
+        while _alive:
+            self.pid_controller.pid_calc(setpoint)
+            #print(self.pid_controller)
+            self.parent.data_connector_pv.cb_append_data_point(self.pid_controller.pv())
+            self.parent.data_connector_sp.cb_append_data_point(setpoint)
+            time.sleep(.1)
+
 
 class Widget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.ui = Ui_Widget()
         self.ui.setupUi(self)
-        self.serial = Serial(self)
-        self.plot = None
-        self.data_connector = None
+        self.data_connector_sp = None
+        self.data_connector_pv = None
+        self.plot_sp = None
+        self.plot_pv = None
         self.live_plot_widget = None
         self.graph_setup()
+        self.serial = Serial(self)
         self.message = {'Kp': 0.0, 'Ki': 0.0, 'Kd': 0.0, 'setpoint': 0.0}
         self.ui.Start_btn.clicked.connect(self.send_start)
         self.ui.Pause_btn.clicked.connect(self.send_pause)
@@ -174,15 +243,25 @@ class Widget(QWidget):
             x_range_controller=LiveAxisRange(roll_on_tick=150, offset_left=1.5),
             **kwargs,
         )
-
         self.live_plot_widget.x_range_controller.crop_left_offset_to_data = True
-        self.plot = LiveLinePlot(pen="purple")
-        self.plot.set_leading_line(
-            LeadingLine.VERTICAL, pen=pg.mkPen("green"), text_axis=LeadingLine.AXIS_Y
-        )
-        self.live_plot_widget.addItem(self.plot)
-        self.data_connector = DataConnector(self.plot, max_points=1500, update_rate=100000)
+
+        # The set point line in the graph
+        self.plot_sp = LiveLinePlot(pen="red")
+
+        # The process value line in the graph
+        self.plot_pv = LiveLinePlot(pen="blue")
+
+        # To add another line create another LiveLinePlot object then add to the self.live_plot_widget below
+        self.live_plot_widget.addItem(self.plot_sp)
+        self.live_plot_widget.addItem(self.plot_pv)
+        # To add data to that line create another DataConnector object max points is how much "history" it keeps
+        self.data_connector_sp = DataConnector(self.plot_sp, max_points=150, update_rate=100000)
+        self.data_connector_pv = DataConnector(self.plot_pv, max_points=150, update_rate=100000)
+
         self.ui.gridLayout.addWidget(self.live_plot_widget, 2, 0, 1, 4)
+
+
+
 
     def send_start(self):
         self.serial.send("start")
@@ -197,11 +276,14 @@ class Widget(QWidget):
         self.data_connector.clear()
 
     def send_values(self):
-        self.message.update({'Kp': float(self.ui.P_value_txt.text())})
-        self.message.update({'Ki': float(self.ui.I_value_txt.text())})
-        self.message.update({'Kd': float(self.ui.D_value_txt.text())})
-        self.message.update({'setpoint': float(self.ui.SetPoint_value_txt.text())})
-        self.serial.send(self.message)
+        global setpoint
+        #self.message.update({'Kp': float(self.ui.P_value_txt.text())})
+        #self.message.update({'Ki': float(self.ui.I_value_txt.text())})
+        #self.message.update({'Kd': float(self.ui.D_value_txt.text())})
+        #self.message.update({'setpoint': float(self.ui.SetPoint_value_txt.text())})
+        #self.serial.send(self.message)
+        setpoint = float(self.ui.SetPoint_value_txt.text())
+
 
 
 if __name__ == "__main__":
