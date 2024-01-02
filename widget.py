@@ -109,6 +109,9 @@ class pid_control:
         self.error = 0
         self.dt_error = 0
 
+    def set_new_params(self, params):
+        self.Kp, self.Ki, self.Kd = params
+
     def calc_p(self):
         return round(float(self.Kp * self.error), 4)
 
@@ -220,6 +223,9 @@ class Widget(QWidget):
         self.ui.Stop_btn.clicked.connect(self.send_stop)
         self.ui.Send_values_btn.clicked.connect(self.send_values)
         self.ui.clear_graph_btn.clicked.connect(self.clear_graph)
+        self.ui.P_value_txt.setText('0.1')
+        self.ui.I_value_txt.setText('0')
+        self.ui.D_value_txt.setText('0.0001')
 
     def closeEvent(self, event):
         self.serial.close()
@@ -273,17 +279,20 @@ class Widget(QWidget):
         self.serial.send("stop")
 
     def clear_graph(self):
-        self.data_connector.clear()
+        self.data_connector_pv.clear()
+        self.data_connector_sp.clear()
 
     def send_values(self):
         global setpoint
-        #self.message.update({'Kp': float(self.ui.P_value_txt.text())})
-        #self.message.update({'Ki': float(self.ui.I_value_txt.text())})
-        #self.message.update({'Kd': float(self.ui.D_value_txt.text())})
-        #self.message.update({'setpoint': float(self.ui.SetPoint_value_txt.text())})
-        #self.serial.send(self.message)
+        # This is for sending data to the pico
+        # self.message.update({'Kp': float(self.ui.P_value_txt.text())})
+        # self.message.update({'Ki': float(self.ui.I_value_txt.text())})
+        # self.message.update({'Kd': float(self.ui.D_value_txt.text())})
+        # self.message.update({'setpoint': float(self.ui.SetPoint_value_txt.text())})
+        # self.serial.send(self.message)
+        params = (float(self.ui.P_value_txt.text()), float(self.ui.I_value_txt.text()), float(self.ui.D_value_txt.text()))
+        self.serial.pid_controller.set_new_params(params)
         setpoint = float(self.ui.SetPoint_value_txt.text())
-
 
 
 if __name__ == "__main__":
